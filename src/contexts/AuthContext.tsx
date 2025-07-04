@@ -36,7 +36,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     
     if (token && savedUser) {
       try {
-        setUser(JSON.parse(savedUser));
+        const userData = JSON.parse(savedUser);
+        setUser({
+          id: userData.id,
+          name: userData.name,
+          email: userData.email,
+          role: userData.role,
+          avatar: userData.avatar,
+          joinDate: new Date(userData.created_at || userData.joinDate),
+          lastActive: new Date(userData.updated_at || userData.lastActive),
+          totalImages: userData.totalImages || 0,
+          totalViews: userData.totalViews || 0,
+          isActive: userData.is_active !== undefined ? userData.is_active : userData.isActive
+        });
       } catch (error) {
         console.error('Failed to parse saved user:', error);
         localStorage.removeItem('auth_token');
@@ -52,7 +64,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const response = await apiClient.login(email, password);
       
       if (response.data) {
-        const userData = {
+        const userData: User = {
           id: response.data.user.id,
           name: response.data.user.name,
           email: response.data.user.email,

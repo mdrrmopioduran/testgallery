@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { LogIn, Camera, Eye, EyeOff } from 'lucide-react';
+import { LogIn, Camera, Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 const Login: React.FC = () => {
-  const [email, setEmail] = useState('john@example.com');
+  const [email, setEmail] = useState('admin@gallery-pro.com');
   const [password, setPassword] = useState('admin123');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
@@ -22,10 +22,10 @@ const Login: React.FC = () => {
       if (success) {
         navigate('/admin');
       } else {
-        setError('Invalid email or password');
+        setError('Invalid email or password. Please check your credentials.');
       }
     } catch (err) {
-      setError('An error occurred during login');
+      setError('Connection failed. Please make sure the backend server is running.');
     } finally {
       setLoading(false);
     }
@@ -48,8 +48,12 @@ const Login: React.FC = () => {
         <div className="bg-white py-8 px-6 shadow-xl rounded-xl border border-yellow-200">
           <form className="space-y-6" onSubmit={handleSubmit}>
             {error && (
-              <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg">
-                {error}
+              <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg flex items-start">
+                <AlertCircle className="h-5 w-5 mt-0.5 mr-3 flex-shrink-0" />
+                <div>
+                  <p className="font-medium">Login Failed</p>
+                  <p className="text-sm mt-1">{error}</p>
+                </div>
               </div>
             )}
 
@@ -118,8 +122,18 @@ const Login: React.FC = () => {
 
           <div className="mt-6 p-4 bg-yellow-50 rounded-lg border border-yellow-200">
             <h3 className="text-sm font-medium text-blue-900 mb-2">Demo Credentials:</h3>
-            <p className="text-xs text-gray-600">Email: john@example.com</p>
+            <p className="text-xs text-gray-600">Email: admin@gallery-pro.com</p>
             <p className="text-xs text-gray-600">Password: admin123</p>
+          </div>
+
+          <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+            <h4 className="text-xs font-medium text-blue-900 mb-1">Backend Status:</h4>
+            <p className="text-xs text-blue-700">
+              Make sure your backend server is running on port 5000
+            </p>
+            <p className="text-xs text-blue-600 mt-1">
+              Run: <code className="bg-blue-100 px-1 rounded">cd server && npm run dev</code>
+            </p>
           </div>
         </div>
 
