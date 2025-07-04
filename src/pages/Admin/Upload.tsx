@@ -1,43 +1,24 @@
 import React, { useState } from 'react';
-import { Upload as UploadIcon, Image as ImageIcon, Tag, FolderOpen, Droplets } from 'lucide-react';
+import { Upload as UploadIcon, Image as ImageIcon, Tag, FolderOpen, Droplets, CheckCircle, AlertCircle } from 'lucide-react';
 import UploadZone from '../../components/Admin/UploadZone';
-import { addImage } from '../../utils/storage';
-import { Image as ImageType } from '../../types';
-import { applyWatermark, getWatermarkSettings, isAutoApplyEnabled } from '../../utils/watermark';
+import apiClient from '../../utils/api';
 
 const Upload: React.FC = () => {
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
-  const [uploadProgress, setUploadProgress] = useState<{ [key: string]: number }>({});
+  const [uploading, setUploading] = useState(false);
+  const [uploadResults, setUploadResults] = useState<{ success: boolean; message: string }[]>([]);
   const [formData, setFormData] = useState({
     title: '',
     description: '',
     category: 'Nature',
     tags: '',
-    isPublic: true,
-    applyWatermark: isAutoApplyEnabled()
+    isPublic: true
   });
 
   const handleFilesSelected = (files: FileList) => {
     const newFiles = Array.from(files);
     setUploadedFiles(prev => [...prev, ...newFiles]);
-    
-    // Simulate upload progress
-    newFiles.forEach((file, index) => {
-      const fileId = `${file.name}-${Date.now()}-${index}`;
-      simulateUpload(fileId);
-    });
-  };
-
-  const simulateUpload = (fileId: string) => {
-    let progress = 0;
-    const interval = setInterval(() => {
-      progress += Math.random() * 30;
-      if (progress >= 100) {
-        progress = 100;
-        clearInterval(interval);
-      }
-      setUploadProgress(prev => ({ ...prev, [fileId]: progress }));
-    }, 500);
+    setUploadResults([]);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -48,66 +29,48 @@ const Upload: React.FC = () => {
       return;
     }
 
-    const watermarkSettings = getWatermarkSettings();
-    const shouldApplyWatermark = formData.applyWatermark && watermarkSettings?.enabled;
+    setUploading(true);
+    const results: { success: boolean; message: string }[] = [];
 
     // Process each file
     for (let index = 0; index < uploadedFiles.length; index++) {
       const file = uploadedFiles[index];
       
       try {
-        const reader = new FileReader();
-        reader.onload = async (e) => {
-          let imageUrl = e.target?.result as string;
-          
-          // Apply watermark if enabled
-          if (shouldApplyWatermark && watermarkSettings) {
-            try {
-              imageUrl = await applyWatermark(imageUrl, watermarkSettings);
-            } catch (error) {
-              console.error('Failed to apply watermark:', error);
-              // Continue with original image if watermarking fails
-            }
-          }
-          
-          const newImage: ImageType = {
-            id: `${Date.now()}-${index}`,
-            title: formData.title || file.name,
-            description: formData.description || 'Uploaded image',
-            url: imageUrl,
-            thumbnail: imageUrl,
-            category: formData.category,
-            tags: formData.tags.split(',').map(tag => tag.trim()).filter(Boolean),
-            uploadDate: new Date(),
-            size: file.size,
-            dimensions: { width: 1920, height: 1080 }, // Mock dimensions
-            userId: '1',
-            isPublic: formData.isPublic,
-            likes: 0,
-            views: 0
-          };
+        const uploadFormData = new FormData();
+        uploadFormData.append('image', file);
+        uploadFormData.append('title', formData.title || file.name.split('.')[0]);
+        uploadFormData.append('description', formData.description || 'Uploaded image');
+        uploadFormData.append('category_id', '1'); // Default to first category for now
+        uploadFormData.append('tags', formData.tags);
+        uploadFormData.append('is_public', formData.isPublic.toString());
 
-          addImage(newImage);
-        };
-        reader.readAsDataURL(file);
+        const response = await apiClient.uploadImage(uploadFormData);
+        
+        if (response.data) {
+          results.push({ success: true, message: `${file.name} uploaded successfully` });
+        } else {
+          results.push({ success: false, message: `${file.name}: ${response.error}` });
+        }
       } catch (error) {
-        console.error('Failed to process file:', error);
+        results.push({ success: false, message: `${file.name}: Upload failed` });
       }
     }
 
-    // Reset form
-    setUploadedFiles([]);
-    setUploadProgress({});
-    setFormData({
-      title: '',
-      description: '',
-      category: 'Nature',
-      tags: '',
-      isPublic: true,
-      applyWatermark: isAutoApplyEnabled()
-    });
+    setUploadResults(results);
+    setUploading(false);
 
-    alert(`Images uploaded successfully${shouldApplyWatermark ? ' with watermarks applied' : ''}!`);
+    // Reset form if all uploads successful
+    if (results.every(r => r.success)) {
+      setUploadedFiles([]);
+      setFormData({
+        title: '',
+        description: '',
+        category: 'Nature',
+        tags: '',
+        isPublic: true
+      });
+    }
   };
 
   const categories = ['Nature', 'Urban', 'Art', 'Objects', 'People', 'Architecture', 'Travel'];
@@ -128,31 +91,40 @@ const Upload: React.FC = () => {
             </h2>
             <UploadZone onFilesSelected={handleFilesSelected} />
             
-            {/* Upload Progress */}
+            {/* Upload Results */}
+            {uploadResults.length > 0 && (
+              <div className="mt-6 space-y-2">
+                <h3 className="font-medium text-blue-900">Upload Results</h3>
+                {uploadResults.map((result, index) => (
+                  <div key={index} className={`flex items-center space-x-2 p-2 rounded ${
+                    result.success ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
+                  }`}>
+                    {result.success ? (
+                      <CheckCircle className="h-4 w-4" />
+                    ) : (
+                      <AlertCircle className="h-4 w-4" />
+                    )}
+                    <span className="text-sm">{result.message}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* File List */}
             {uploadedFiles.length > 0 && (
               <div className="mt-6 space-y-3">
-                <h3 className="font-medium text-blue-900">Upload Progress</h3>
-                {uploadedFiles.map((file, index) => {
-                  const fileId = `${file.name}-${Date.now()}-${index}`;
-                  const progress = uploadProgress[fileId] || 0;
-                  return (
-                    <div key={fileId} className="flex items-center space-x-3">
-                      <ImageIcon className="h-5 w-5 text-gray-400" />
-                      <div className="flex-1">
-                        <div className="flex justify-between text-sm">
-                          <span className="text-gray-900">{file.name}</span>
-                          <span className="text-gray-500">{Math.round(progress)}%</span>
-                        </div>
-                        <div className="w-full bg-gray-200 rounded-full h-2 mt-1">
-                          <div
-                            className="bg-blue-900 h-2 rounded-full transition-all duration-300"
-                            style={{ width: `${progress}%` }}
-                          />
-                        </div>
-                      </div>
+                <h3 className="font-medium text-blue-900">Selected Files</h3>
+                {uploadedFiles.map((file, index) => (
+                  <div key={index} className="flex items-center space-x-3 p-2 bg-gray-50 rounded">
+                    <ImageIcon className="h-5 w-5 text-gray-400" />
+                    <div className="flex-1">
+                      <span className="text-sm text-gray-900">{file.name}</span>
+                      <span className="text-xs text-gray-500 ml-2">
+                        ({(file.size / 1024 / 1024).toFixed(1)} MB)
+                      </span>
                     </div>
-                  );
-                })}
+                  </div>
+                ))}
               </div>
             )}
           </div>
@@ -171,8 +143,9 @@ const Upload: React.FC = () => {
                 value={formData.title}
                 onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-900 focus:border-transparent"
-                placeholder="Enter image title"
+                placeholder="Enter image title (optional)"
               />
+              <p className="text-xs text-gray-500 mt-1">Leave empty to use filename</p>
             </div>
 
             <div>
@@ -184,7 +157,7 @@ const Upload: React.FC = () => {
                 onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
                 rows={3}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-900 focus:border-transparent"
-                placeholder="Enter image description"
+                placeholder="Enter image description (optional)"
               />
             </div>
 
@@ -219,41 +192,25 @@ const Upload: React.FC = () => {
               <p className="text-xs text-gray-500 mt-1">Separate tags with commas</p>
             </div>
 
-            <div className="space-y-3">
-              <div className="flex items-center">
-                <input
-                  type="checkbox"
-                  id="isPublic"
-                  checked={formData.isPublic}
-                  onChange={(e) => setFormData(prev => ({ ...prev, isPublic: e.target.checked }))}
-                  className="w-4 h-4 text-blue-900 rounded focus:ring-blue-700"
-                />
-                <label htmlFor="isPublic" className="ml-2 text-sm text-gray-700">
-                  Make images public
-                </label>
-              </div>
-
-              <div className="flex items-center">
-                <input
-                  type="checkbox"
-                  id="applyWatermark"
-                  checked={formData.applyWatermark}
-                  onChange={(e) => setFormData(prev => ({ ...prev, applyWatermark: e.target.checked }))}
-                  className="w-4 h-4 text-blue-900 rounded focus:ring-blue-700"
-                />
-                <label htmlFor="applyWatermark" className="ml-2 text-sm text-gray-700 flex items-center">
-                  <Droplets className="h-4 w-4 mr-1" />
-                  Apply watermark
-                </label>
-              </div>
+            <div className="flex items-center">
+              <input
+                type="checkbox"
+                id="isPublic"
+                checked={formData.isPublic}
+                onChange={(e) => setFormData(prev => ({ ...prev, isPublic: e.target.checked }))}
+                className="w-4 h-4 text-blue-900 rounded focus:ring-blue-700"
+              />
+              <label htmlFor="isPublic" className="ml-2 text-sm text-gray-700">
+                Make images public
+              </label>
             </div>
 
             <button
               type="submit"
-              disabled={uploadedFiles.length === 0}
+              disabled={uploadedFiles.length === 0 || uploading}
               className="w-full px-4 py-2 bg-yellow-500 text-blue-900 rounded-lg hover:bg-yellow-400 focus:ring-2 focus:ring-yellow-400 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
             >
-              Upload Images
+              {uploading ? 'Uploading...' : `Upload ${uploadedFiles.length} Image${uploadedFiles.length !== 1 ? 's' : ''}`}
             </button>
           </form>
         </div>

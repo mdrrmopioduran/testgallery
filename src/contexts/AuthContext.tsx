@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { User } from '../types';
-import { getCurrentUser, setCurrentUser, getUsers } from '../utils/storage';
+import apiClient from '../utils/api';
 
 interface AuthContextType {
   user: User | null;
@@ -8,6 +8,7 @@ interface AuthContextType {
   logout: () => void;
   isAuthenticated: boolean;
   isAdmin: boolean;
+  loading: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -26,28 +27,58 @@ interface AuthProviderProps {
 
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const currentUser = getCurrentUser();
-    setUser(currentUser);
+    // Check for existing auth token
+    const token = localStorage.getItem('auth_token');
+    const savedUser = localStorage.getItem('current_user');
+    
+    if (token && savedUser) {
+      try {
+        setUser(JSON.parse(savedUser));
+      } catch (error) {
+        console.error('Failed to parse saved user:', error);
+        localStorage.removeItem('auth_token');
+        localStorage.removeItem('current_user');
+      }
+    }
+    
+    setLoading(false);
   }, []);
 
   const login = async (email: string, password: string): Promise<boolean> => {
-    // Mock authentication - in real app, this would hit an API
-    const users = getUsers();
-    const foundUser = users.find(u => u.email === email);
-    
-    if (foundUser && password === 'admin123') { // Mock password
-      setUser(foundUser);
-      setCurrentUser(foundUser);
-      return true;
+    try {
+      const response = await apiClient.login(email, password);
+      
+      if (response.data) {
+        const userData = {
+          id: response.data.user.id,
+          name: response.data.user.name,
+          email: response.data.user.email,
+          role: response.data.user.role as 'admin' | 'photographer' | 'user',
+          avatar: response.data.user.avatar,
+          joinDate: new Date(response.data.user.created_at),
+          lastActive: new Date(response.data.user.updated_at),
+          totalImages: 0,
+          totalViews: 0,
+          isActive: response.data.user.is_active
+        };
+        
+        setUser(userData);
+        return true;
+      }
+      
+      return false;
+    } catch (error) {
+      console.error('Login error:', error);
+      return false;
     }
-    return false;
   };
 
   const logout = () => {
     setUser(null);
-    setCurrentUser(null);
+    apiClient.logout();
   };
 
   const value = {
@@ -55,7 +86,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     login,
     logout,
     isAuthenticated: user !== null,
-    isAdmin: user?.role === 'admin'
+    isAdmin: user?.role === 'admin',
+    loading
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
