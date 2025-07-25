@@ -34,6 +34,7 @@ class ApiClient {
       const response = await fetch(url, {
         ...options,
         headers,
+        mode: 'cors',
       });
 
       const data = await response.json();
@@ -45,7 +46,7 @@ class ApiClient {
       return { data };
     } catch (error) {
       console.error('API request failed:', error);
-      return { error: 'Network error' };
+      return { error: 'Cannot connect to server. Please ensure the backend server is running on http://localhost:5000' };
     }
   }
 
