@@ -2,10 +2,11 @@ import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { LogIn, Camera, Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { supabase } from '../lib/supabase';
 
 const Login: React.FC = () => {
-  const [email, setEmail] = useState('admin@gallery-pro.com');
-  const [password, setPassword] = useState('admin123');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -22,15 +23,46 @@ const Login: React.FC = () => {
       if (success) {
         navigate('/admin');
       } else {
-        setError('Invalid email or password. Please check your credentials.');
+        setError('Invalid email or password. Please check your credentials or sign up for a new account.');
       }
     } catch (err) {
-      setError('Connection failed. Please make sure the backend server is running.');
+      setError('Login failed. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
+  const handleSignUp = async () => {
+    if (!email || !password) {
+      setError('Please enter email and password');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            name: email.split('@')[0],
+            role: 'user'
+          }
+        }
+      });
+
+      if (error) {
+        setError(error.message);
+      } else if (data.user) {
+        setError('');
+        alert('Account created successfully! You can now log in.');
+      }
+    } catch (err) {
+      setError('Sign up failed. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-yellow-50 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-md w-full space-y-8">
@@ -41,7 +73,7 @@ const Login: React.FC = () => {
           </Link>
           <h2 className="text-3xl font-bold text-blue-900">Admin Login</h2>
           <p className="mt-2 text-sm text-gray-600">
-            Sign in to access the admin dashboard
+            Sign in to access the gallery dashboard
           </p>
         </div>
 
@@ -118,21 +150,27 @@ const Login: React.FC = () => {
                 {loading ? 'Signing in...' : 'Sign in'}
               </button>
             </div>
+
+            <div className="text-center">
+              <span className="text-sm text-gray-600">Don't have an account? </span>
+              <button
+                type="button"
+                onClick={handleSignUp}
+                disabled={loading}
+                className="text-sm font-medium text-blue-900 hover:text-blue-700 transition-colors disabled:opacity-50"
+              >
+                Sign up here
+              </button>
+            </div>
           </form>
 
-          <div className="mt-6 p-4 bg-yellow-50 rounded-lg border border-yellow-200">
-            <h3 className="text-sm font-medium text-blue-900 mb-2">Demo Credentials:</h3>
-            <p className="text-xs text-gray-600">Email: admin@gallery-pro.com</p>
-            <p className="text-xs text-gray-600">Password: admin123</p>
-          </div>
-
-          <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
-            <h4 className="text-xs font-medium text-blue-900 mb-1">Backend Status:</h4>
-            <p className="text-xs text-blue-700">
-              Make sure your backend server is running on port 5000
+          <div className="mt-6 p-4 bg-green-50 rounded-lg border border-green-200">
+            <h3 className="text-sm font-medium text-blue-900 mb-2">Supabase Connected:</h3>
+            <p className="text-xs text-green-700">
+              Your gallery is now powered by Supabase for authentication and data storage.
             </p>
-            <p className="text-xs text-blue-600 mt-1">
-              Run: <code className="bg-blue-100 px-1 rounded">cd server && npm run dev</code>
+            <p className="text-xs text-green-600 mt-1">
+              Create an account or sign in to get started!
             </p>
           </div>
         </div>
