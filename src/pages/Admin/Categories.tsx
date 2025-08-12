@@ -15,8 +15,9 @@ import {
   Save,
   X
 } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { Category } from '../../types';
-import { getCategories, saveCategories, getImages } from '../../utils/storage';
+import { apiClient } from '../../utils/api';
 
 interface CategoryModalProps {
   category: Category | null;
@@ -182,16 +183,26 @@ const Categories: React.FC = () => {
   }, [categories, searchTerm, selectedStatus]);
 
   const loadCategories = () => {
-    const allCategories = getCategories();
-    const images = getImages();
-    
-    // Update image counts
-    const updatedCategories = allCategories.map(category => ({
-      ...category,
-      imageCount: images.filter(img => img.category === category.name).length
-    }));
-    
-    setCategories(updatedCategories);
+    loadCategoriesFromSupabase();
+  };
+
+  const loadCategoriesFromSupabase = async () => {
+    try {
+      const response = await apiClient.getCategories();
+      if (response.data) {
+        const formattedCategories = response.data.map((cat: any) => ({
+          id: cat.id,
+          name: cat.name,
+          description: cat.description,
+          imageCount: cat.images?.length || 0,
+          isActive: cat.is_active
+        }));
+        setCategories(formattedCategories);
+      }
+    } catch (error) {
+      console.error('Failed to load categories:', error);
+      toast.error('Failed to load categories');
+    }
   };
 
   const filterCategories = () => {
@@ -225,18 +236,30 @@ const Categories: React.FC = () => {
 
   const handleDeleteCategory = (id: string) => {
     if (window.confirm('Are you sure you want to delete this category?')) {
-      const updatedCategories = categories.filter(cat => cat.id !== id);
-      setCategories(updatedCategories);
-      saveCategories(updatedCategories);
+      deleteCategoryFromSupabase(id);
+    }
+  };
+
+  const deleteCategoryFromSupabase = async (id: string) => {
+    try {
+      await apiClient.deleteCategory(id);
+      loadCategories();
+    } catch (error) {
+      console.error('Failed to delete category:', error);
     }
   };
 
   const handleToggleStatus = (id: string, isActive: boolean) => {
-    const updatedCategories = categories.map(cat =>
-      cat.id === id ? { ...cat, isActive } : cat
-    );
-    setCategories(updatedCategories);
-    saveCategories(updatedCategories);
+    updateCategoryInSupabase(id, { is_active: isActive });
+  };
+
+  const updateCategoryInSupabase = async (id: string, updates: any) => {
+    try {
+      await apiClient.updateCategory(id, updates);
+      loadCategories();
+    } catch (error) {
+      console.error('Failed to update category:', error);
+    }
   };
 
   const handleBulkDelete = () => {
@@ -258,26 +281,23 @@ const Categories: React.FC = () => {
 
   const handleSaveCategory = (categoryData: Partial<Category>) => {
     if (editingCategory) {
-      const updatedCategories = categories.map(cat =>
-        cat.id === editingCategory.id ? { ...cat, ...categoryData } : cat
-      );
-      setCategories(updatedCategories);
-      saveCategories(updatedCategories);
+      updateCategoryInSupabase(editingCategory.id, categoryData);
     } else {
-      const newCategory: Category = {
-        id: Date.now().toString(),
-        name: categoryData.name || '',
-        description: categoryData.description || '',
-        imageCount: 0,
-        isActive: true,
-        ...categoryData
-      };
-      const updatedCategories = [...categories, newCategory];
-      setCategories(updatedCategories);
-      saveCategories(updatedCategories);
+      createCategoryInSupabase(categoryData);
     }
     setShowModal(false);
-    loadCategories();
+  };
+
+  const createCategoryInSupabase = async (categoryData: Partial<Category>) => {
+    try {
+      await apiClient.createCategory({
+        name: categoryData.name || '',
+        description: categoryData.description || ''
+      });
+      loadCategories();
+    } catch (error) {
+      console.error('Failed to create category:', error);
+    }
   };
 
   const stats = {

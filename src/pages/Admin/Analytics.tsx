@@ -21,7 +21,8 @@ import {
   Star,
   Activity
 } from 'lucide-react';
-import { getImages, getUsers } from '../../utils/storage';
+import toast from 'react-hot-toast';
+import { apiClient } from '../../utils/api';
 import { Image as ImageType, User } from '../../types';
 
 interface AnalyticsData {
@@ -107,59 +108,96 @@ const Analytics: React.FC = () => {
   const loadAnalyticsData = async () => {
     setLoading(true);
     
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    
-    const images = getImages();
-    const users = getUsers();
-    
-    // Generate mock analytics data based on real data
-    const mockData: AnalyticsData = {
-      overview: {
-        totalViews: images.reduce((sum, img) => sum + img.views, 0),
-        totalLikes: images.reduce((sum, img) => sum + img.likes, 0),
-        totalDownloads: Math.floor(images.reduce((sum, img) => sum + img.views, 0) * 0.15),
-        totalUsers: users.length,
-        totalImages: images.length,
-        avgViewsPerImage: Math.floor(images.reduce((sum, img) => sum + img.views, 0) / images.length),
-        avgLikesPerImage: Math.floor(images.reduce((sum, img) => sum + img.likes, 0) / images.length),
-        growthRate: 12.5
-      },
-      timeSeriesData: generateTimeSeriesData(dateRange),
-      topImages: images
-        .sort((a, b) => b.views - a.views)
-        .slice(0, 10)
-        .map(img => ({
+    try {
+      const [imagesResponse, usersResponse, analyticsResponse] = await Promise.all([
+        apiClient.getImages(),
+        apiClient.getUsers(),
+        apiClient.getAnalytics()
+      ]);
+
+      if (imagesResponse.data && usersResponse.data) {
+        const images = imagesResponse.data.map((img: any) => ({
           id: img.id,
           title: img.title,
-          thumbnail: img.thumbnail,
-          views: img.views,
-          likes: img.likes,
-          category: img.category,
-          uploadDate: img.uploadDate
-        })),
-      categoryStats: generateCategoryStats(images),
-      userStats: {
-        topContributors: generateTopContributors(users, images),
-        userGrowth: generateUserGrowthData()
-      },
-      deviceStats: {
-        desktop: 45,
-        mobile: 35,
-        tablet: 20
-      },
-      geographicStats: [
-        { country: 'United States', users: 1250, views: 15420 },
-        { country: 'United Kingdom', users: 890, views: 11230 },
-        { country: 'Canada', users: 650, views: 8940 },
-        { country: 'Germany', users: 580, views: 7650 },
-        { country: 'France', users: 420, views: 5890 }
-      ],
-      recentActivity: generateRecentActivity()
-    };
-    
-    setAnalyticsData(mockData);
-    setLoading(false);
+          description: img.description,
+          url: img.file_path,
+          thumbnail: img.thumbnail_path || img.file_path,
+          category: img.categories?.name || 'Uncategorized',
+          tags: img.image_tags?.map((tag: any) => tag.tag) || [],
+          uploadDate: new Date(img.created_at),
+          size: img.file_size,
+          dimensions: { width: img.width || 1920, height: img.height || 1080 },
+          userId: img.user_id,
+          isPublic: img.is_public,
+          likes: img.likes_count,
+          views: img.views_count
+        }));
+
+        const users = usersResponse.data.map((user: any) => ({
+          id: user.id,
+          name: user.name,
+          email: user.email || '',
+          role: user.role,
+          avatar: user.avatar,
+          joinDate: new Date(user.created_at),
+          lastActive: new Date(user.updated_at),
+          totalImages: user.total_images || 0,
+          totalViews: user.total_views || 0,
+          isActive: user.is_active
+        }));
+
+        const mockData: AnalyticsData = {
+          overview: {
+            totalViews: images.reduce((sum, img) => sum + img.views, 0),
+            totalLikes: images.reduce((sum, img) => sum + img.likes, 0),
+            totalDownloads: Math.floor(images.reduce((sum, img) => sum + img.views, 0) * 0.15),
+            totalUsers: users.length,
+            totalImages: images.length,
+            avgViewsPerImage: images.length > 0 ? Math.floor(images.reduce((sum, img) => sum + img.views, 0) / images.length) : 0,
+            avgLikesPerImage: images.length > 0 ? Math.floor(images.reduce((sum, img) => sum + img.likes, 0) / images.length) : 0,
+            growthRate: 12.5
+          },
+          timeSeriesData: generateTimeSeriesData(dateRange),
+          topImages: images
+            .sort((a, b) => b.views - a.views)
+            .slice(0, 10)
+            .map(img => ({
+              id: img.id,
+              title: img.title,
+              thumbnail: img.thumbnail,
+              views: img.views,
+              likes: img.likes,
+              category: img.category,
+              uploadDate: img.uploadDate
+            })),
+          categoryStats: generateCategoryStats(images),
+          userStats: {
+            topContributors: generateTopContributors(users, images),
+            userGrowth: generateUserGrowthData()
+          },
+          deviceStats: {
+            desktop: 45,
+            mobile: 35,
+            tablet: 20
+          },
+          geographicStats: [
+            { country: 'United States', users: 1250, views: 15420 },
+            { country: 'United Kingdom', users: 890, views: 11230 },
+            { country: 'Canada', users: 650, views: 8940 },
+            { country: 'Germany', users: 580, views: 7650 },
+            { country: 'France', users: 420, views: 5890 }
+          ],
+          recentActivity: generateRecentActivity()
+        };
+        
+        setAnalyticsData(mockData);
+      }
+    } catch (error) {
+      console.error('Failed to load analytics data:', error);
+      toast.error('Failed to load analytics data');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const generateTimeSeriesData = (range: string) => {

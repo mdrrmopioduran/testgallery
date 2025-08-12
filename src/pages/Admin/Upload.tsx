@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Upload as UploadIcon, Image as ImageIcon, Tag, FolderOpen, Droplets, CheckCircle, AlertCircle } from 'lucide-react';
+import toast from 'react-hot-toast';
 import UploadZone from '../../components/Admin/UploadZone';
 import apiClient from '../../utils/api';
 
@@ -37,15 +38,13 @@ const Upload: React.FC = () => {
       const file = uploadedFiles[index];
       
       try {
-        const uploadFormData = new FormData();
-        uploadFormData.append('image', file);
-        uploadFormData.append('title', formData.title || file.name.split('.')[0]);
-        uploadFormData.append('description', formData.description || 'Uploaded image');
-        uploadFormData.append('category_id', '1'); // Default to first category for now
-        uploadFormData.append('tags', formData.tags);
-        uploadFormData.append('is_public', formData.isPublic.toString());
-
-        const response = await apiClient.uploadImage(uploadFormData);
+        const response = await apiClient.uploadImage(file, {
+          title: formData.title || file.name.split('.')[0],
+          description: formData.description || 'Uploaded image',
+          category_id: formData.category === 'Nature' ? await getCategoryId('Nature') : undefined,
+          tags: formData.tags ? formData.tags.split(',').map(tag => tag.trim()) : [],
+          is_public: formData.isPublic
+        });
         
         if (response.data) {
           results.push({ success: true, message: `${file.name} uploaded successfully` });
@@ -71,6 +70,19 @@ const Upload: React.FC = () => {
         isPublic: true
       });
     }
+  };
+
+  const getCategoryId = async (categoryName: string): Promise<string | undefined> => {
+    try {
+      const response = await apiClient.getCategories();
+      if (response.data) {
+        const category = response.data.find((cat: any) => cat.name === categoryName);
+        return category?.id;
+      }
+    } catch (error) {
+      console.error('Failed to get category ID:', error);
+    }
+    return undefined;
   };
 
   const categories = ['Nature', 'Urban', 'Art', 'Objects', 'People', 'Architecture', 'Travel'];

@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Search, Filter, Edit, Trash2, Eye, Plus, Grid, List } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { Image as ImageType } from '../../types';
-import { getImages, deleteImage, updateImage } from '../../utils/storage';
+import { apiClient } from '../../utils/api';
 
 const Images: React.FC = () => {
   const [images, setImages] = useState<ImageType[]>([]);
@@ -20,9 +21,35 @@ const Images: React.FC = () => {
   }, [images, searchTerm, selectedCategory]);
 
   const loadImages = () => {
-    const allImages = getImages();
-    setImages(allImages);
-    setFilteredImages(allImages);
+    loadImagesFromSupabase();
+  };
+
+  const loadImagesFromSupabase = async () => {
+    try {
+      const response = await apiClient.getImages();
+      if (response.data) {
+        const formattedImages = response.data.map((img: any) => ({
+          id: img.id,
+          title: img.title,
+          description: img.description,
+          url: img.file_path,
+          thumbnail: img.thumbnail_path || img.file_path,
+          category: img.categories?.name || 'Uncategorized',
+          tags: img.image_tags?.map((tag: any) => tag.tag) || [],
+          uploadDate: new Date(img.created_at),
+          size: img.file_size,
+          dimensions: { width: img.width || 1920, height: img.height || 1080 },
+          userId: img.user_id,
+          isPublic: img.is_public,
+          likes: img.likes_count,
+          views: img.views_count
+        }));
+        setImages(formattedImages);
+      }
+    } catch (error) {
+      console.error('Failed to load images:', error);
+      toast.error('Failed to load images');
+    }
   };
 
   const filterImages = () => {
@@ -44,23 +71,38 @@ const Images: React.FC = () => {
 
   const handleDeleteImage = (id: string) => {
     if (window.confirm('Are you sure you want to delete this image?')) {
-      deleteImage(id);
+      deleteImageFromSupabase(id);
+    }
+  };
+
+  const deleteImageFromSupabase = async (id: string) => {
+    try {
+      await apiClient.deleteImage(id);
       loadImages();
+    } catch (error) {
+      console.error('Failed to delete image:', error);
     }
   };
 
   const handleTogglePublic = (id: string, isPublic: boolean) => {
-    updateImage(id, { isPublic });
-    loadImages();
+    updateImageInSupabase(id, { is_public: isPublic });
+  };
+
+  const updateImageInSupabase = async (id: string, updates: any) => {
+    try {
+      await apiClient.updateImage(id, updates);
+      loadImages();
+    } catch (error) {
+      console.error('Failed to update image:', error);
+    }
   };
 
   const handleBulkDelete = () => {
     if (selectedImages.length === 0) return;
     
     if (window.confirm(`Are you sure you want to delete ${selectedImages.length} images?`)) {
-      selectedImages.forEach(id => deleteImage(id));
+      selectedImages.forEach(id => deleteImageFromSupabase(id));
       setSelectedImages([]);
-      loadImages();
     }
   };
 

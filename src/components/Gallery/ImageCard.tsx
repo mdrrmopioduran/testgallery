@@ -1,5 +1,6 @@
 import React from 'react';
 import { Heart, Eye, Calendar } from 'lucide-react';
+import { motion } from 'framer-motion';
 import { Image as ImageType } from '../../types';
 
 interface ImageCardProps {
@@ -9,7 +10,10 @@ interface ImageCardProps {
 
 const ImageCard: React.FC<ImageCardProps> = ({ image, onClick }) => {
   return (
-    <div 
+    <motion.div 
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3 }}
       onClick={onClick}
       className="group cursor-pointer bg-white rounded-xl overflow-hidden shadow-md hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1"
     >
@@ -60,7 +64,7 @@ const ImageCard: React.FC<ImageCardProps> = ({ image, onClick }) => {
           ))}
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 };
 

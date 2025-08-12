@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import toast from 'react-hot-toast';
 import { Image as ImageType } from '../types';
-import { getImages } from '../utils/storage';
+import { apiClient } from '../utils/api';
 import ImageCard from '../components/Gallery/ImageCard';
 import Lightbox from '../components/Gallery/Lightbox';
 import FilterBar from '../components/Gallery/FilterBar';
@@ -15,12 +16,39 @@ const Gallery: React.FC = () => {
 
   useEffect(() => {
     const loadImages = () => {
-      const allImages = getImages().filter(img => img.isPublic);
-      setImages(allImages);
-      setFilteredImages(allImages);
+      loadImagesFromSupabase();
     };
     loadImages();
   }, []);
+
+  const loadImagesFromSupabase = async () => {
+    try {
+      const response = await apiClient.getImages({ is_public: true });
+      if (response.data) {
+        const formattedImages = response.data.map((img: any) => ({
+          id: img.id,
+          title: img.title,
+          description: img.description,
+          url: img.file_path,
+          thumbnail: img.thumbnail_path || img.file_path,
+          category: img.categories?.name || 'Uncategorized',
+          tags: img.image_tags?.map((tag: any) => tag.tag) || [],
+          uploadDate: new Date(img.created_at),
+          size: img.file_size,
+          dimensions: { width: img.width || 1920, height: img.height || 1080 },
+          userId: img.user_id,
+          isPublic: img.is_public,
+          likes: img.likes_count,
+          views: img.views_count
+        }));
+        setImages(formattedImages);
+        setFilteredImages(formattedImages);
+      }
+    } catch (error) {
+      console.error('Failed to load images:', error);
+      toast.error('Failed to load images');
+    }
+  };
 
   useEffect(() => {
     let filtered = images;

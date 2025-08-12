@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import { User } from '../types';
 import { supabase } from '../lib/supabase';
 import type { Session } from '@supabase/supabase-js';
+import toast from 'react-hot-toast';
 
 interface AuthContextType {
   user: User | null;
@@ -46,6 +47,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        console.log('Auth state changed:', event, session?.user?.email);
         setSession(session);
         
         if (session?.user) {
@@ -70,7 +72,42 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       if (error) {
         console.error('Error loading profile:', error);
-        setUser(null);
+        // If profile doesn't exist, create one
+        if (error.code === 'PGRST116') {
+          const { data: { user: authUser } } = await supabase.auth.getUser();
+          if (authUser) {
+            const { data: newProfile, error: createError } = await supabase
+              .from('profiles')
+              .insert({
+                id: authUser.id,
+                name: authUser.user_metadata?.name || authUser.email?.split('@')[0] || 'User',
+                role: 'admin' // First user becomes admin
+              })
+              .select()
+              .single();
+
+            if (createError) {
+              console.error('Error creating profile:', createError);
+              setUser(null);
+            } else {
+              const userData: User = {
+                id: newProfile.id,
+                name: newProfile.name,
+                email: authUser.email || '',
+                role: newProfile.role as 'admin' | 'photographer' | 'user',
+                avatar: newProfile.avatar,
+                joinDate: new Date(newProfile.created_at),
+                lastActive: new Date(newProfile.updated_at),
+                totalImages: newProfile.total_images || 0,
+                totalViews: newProfile.total_views || 0,
+                isActive: newProfile.is_active
+              };
+              setUser(userData);
+            }
+          }
+        } else {
+          setUser(null);
+        }
       } else {
         const userData: User = {
           id: profile.id,
@@ -96,6 +133,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const login = async (email: string, password: string): Promise<boolean> => {
     try {
+      setLoading(true);
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password
@@ -103,13 +141,27 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       if (error) {
         console.error('Login error:', error);
+        toast.error(error.message);
         return false;
+      }
+
+      if (data.user) {
+        // Track login event
+        await supabase
+          .from('analytics_events')
+          .insert({
+            event_type: 'login',
+            user_id: data.user.id
+          });
       }
 
       return !!data.user;
     } catch (error) {
       console.error('Login error:', error);
+      toast.error('Login failed');
       return false;
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -117,6 +169,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     await supabase.auth.signOut();
     setUser(null);
     setSession(null);
+    toast.success('Logged out successfully');
   };
 
   const value = {

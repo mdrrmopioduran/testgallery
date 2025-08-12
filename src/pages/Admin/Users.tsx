@@ -17,8 +17,9 @@ import {
   Grid,
   List
 } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { User } from '../../types';
-import { getUsers, saveUsers, deleteUser, updateUser, addUser } from '../../utils/storage';
+import { apiClient } from '../../utils/api';
 import UserModal from '../../components/Admin/UserModal';
 import UserCard from '../../components/Admin/UserCard';
 
@@ -44,8 +45,31 @@ const Users: React.FC = () => {
   }, [users, searchTerm, selectedRole, selectedStatus, sortBy, sortOrder]);
 
   const loadUsers = () => {
-    const allUsers = getUsers();
-    setUsers(allUsers);
+    loadUsersFromSupabase();
+  };
+
+  const loadUsersFromSupabase = async () => {
+    try {
+      const response = await apiClient.getUsers();
+      if (response.data) {
+        const formattedUsers = response.data.map((user: any) => ({
+          id: user.id,
+          name: user.name,
+          email: user.email || '',
+          role: user.role,
+          avatar: user.avatar,
+          joinDate: new Date(user.created_at),
+          lastActive: new Date(user.updated_at),
+          totalImages: user.total_images || 0,
+          totalViews: user.total_views || 0,
+          isActive: user.is_active
+        }));
+        setUsers(formattedUsers);
+      }
+    } catch (error) {
+      console.error('Failed to load users:', error);
+      toast.error('Failed to load users');
+    }
   };
 
   const filterAndSortUsers = () => {
@@ -122,8 +146,16 @@ const Users: React.FC = () => {
   };
 
   const handleToggleUserStatus = (id: string, isActive: boolean) => {
-    updateUser(id, { isActive, lastActive: isActive ? new Date() : new Date(users.find(u => u.id === id)?.lastActive || new Date()) });
-    loadUsers();
+    updateUserInSupabase(id, { is_active: isActive });
+  };
+
+  const updateUserInSupabase = async (id: string, updates: any) => {
+    try {
+      await apiClient.updateUser(id, updates);
+      loadUsers();
+    } catch (error) {
+      console.error('Failed to update user:', error);
+    }
   };
 
   const handleBulkStatusChange = (status: boolean) => {
@@ -144,22 +176,10 @@ const Users: React.FC = () => {
 
   const handleSaveUser = (userData: Partial<User>) => {
     if (editingUser) {
-      updateUser(editingUser.id, userData);
+      updateUserInSupabase(editingUser.id, userData);
     } else {
-      const newUser: User = {
-        id: Date.now().toString(),
-        name: userData.name || '',
-        email: userData.email || '',
-        role: userData.role || 'user',
-        avatar: userData.avatar || `https://images.pexels.com/photos/1222271/pexels-photo-1222271.jpeg?auto=compress&cs=tinysrgb&w=200`,
-        joinDate: new Date(),
-        lastActive: new Date(),
-        totalImages: 0,
-        totalViews: 0,
-        isActive: true,
-        ...userData
-      };
-      addUser(newUser);
+      // For new users, we would need to create them through Supabase Auth
+      toast.info('New user creation requires email invitation in production');
     }
     setShowModal(false);
     loadUsers();

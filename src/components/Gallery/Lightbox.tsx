@@ -1,5 +1,7 @@
 import React, { useEffect } from 'react';
 import { X, Heart, Download, Share2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import toast from 'react-hot-toast';
 import { Image as ImageType } from '../../types';
 
 interface LightboxProps {
@@ -30,8 +32,64 @@ const Lightbox: React.FC<LightboxProps> = ({
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [onClose, onNext, onPrevious, hasNext, hasPrevious]);
 
+  const handleLike = async () => {
+    // Track like event
+    try {
+      // In a real app, you would update the like count in the database
+      toast.success('Image liked!');
+    } catch (error) {
+      toast.error('Failed to like image');
+    }
+  };
+
+  const handleDownload = async () => {
+    try {
+      const response = await fetch(image.url);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${image.title}.jpg`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+      toast.success('Image downloaded!');
+    } catch (error) {
+      toast.error('Failed to download image');
+    }
+  };
+
+  const handleShare = async () => {
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: image.title,
+          text: image.description,
+          url: window.location.href
+        });
+      } catch (error) {
+        // User cancelled sharing
+      }
+    } else {
+      // Fallback: copy URL to clipboard
+      try {
+        await navigator.clipboard.writeText(window.location.href);
+        toast.success('Link copied to clipboard!');
+      } catch (error) {
+        toast.error('Failed to copy link');
+      }
+    }
+  };
+
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-90 z-50 flex items-center justify-center p-4">
+    <AnimatePresence>
+      <motion.div 
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 bg-black bg-opacity-90 z-50 flex items-center justify-center p-4"
+      >
       <div className="relative max-w-7xl max-h-full w-full h-full flex flex-col lg:flex-row">
         {/* Close button */}
         <button
@@ -62,10 +120,13 @@ const Lightbox: React.FC<LightboxProps> = ({
 
         {/* Image */}
         <div className="flex-1 flex items-center justify-center">
-          <img
+          <motion.img
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ duration: 0.3 }}
             src={image.url}
             alt={image.title}
-            className="max-w-full max-h-full object-contain"
+            className="max-w-full max-h-full object-contain rounded-lg"
           />
         </div>
 
@@ -77,15 +138,24 @@ const Lightbox: React.FC<LightboxProps> = ({
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-4">
-                <button className="flex items-center space-x-2 text-red-500 hover:text-red-600 transition-colors">
+                <button 
+                  onClick={handleLike}
+                  className="flex items-center space-x-2 text-red-500 hover:text-red-600 transition-colors"
+                >
                   <Heart className="h-5 w-5" />
                   <span>{image.likes}</span>
                 </button>
-                <button className="flex items-center space-x-2 text-blue-500 hover:text-blue-600 transition-colors">
+                <button 
+                  onClick={handleDownload}
+                  className="flex items-center space-x-2 text-blue-500 hover:text-blue-600 transition-colors"
+                >
                   <Download className="h-5 w-5" />
                   <span>Download</span>
                 </button>
-                <button className="flex items-center space-x-2 text-green-500 hover:text-green-600 transition-colors">
+                <button 
+                  onClick={handleShare}
+                  className="flex items-center space-x-2 text-green-500 hover:text-green-600 transition-colors"
+                >
                   <Share2 className="h-5 w-5" />
                   <span>Share</span>
                 </button>
@@ -135,7 +205,8 @@ const Lightbox: React.FC<LightboxProps> = ({
           </div>
         </div>
       </div>
-    </div>
+      </motion.div>
+    </AnimatePresence>
   );
 };
 

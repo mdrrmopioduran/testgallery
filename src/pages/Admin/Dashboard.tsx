@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Image, Users, Eye, Heart, TrendingUp, Upload, Activity } from 'lucide-react';
+import toast from 'react-hot-toast';
 import StatsCard from '../../components/Admin/StatsCard';
-import { getImages, getUsers } from '../../utils/storage';
-import { mockAnalytics } from '../../utils/mockData';
+import { apiClient } from '../../utils/api';
 import { Image as ImageType, User, Analytics } from '../../types';
 
 const Dashboard: React.FC = () => {
@@ -12,11 +12,58 @@ const Dashboard: React.FC = () => {
 
   useEffect(() => {
     const loadData = () => {
-      setImages(getImages());
-      setUsers(getUsers());
+      loadDashboardData();
     };
     loadData();
   }, []);
+
+  const loadDashboardData = async () => {
+    try {
+      const [imagesResponse, usersResponse] = await Promise.all([
+        apiClient.getImages(),
+        apiClient.getUsers()
+      ]);
+
+      if (imagesResponse.data) {
+        const formattedImages = imagesResponse.data.map((img: any) => ({
+          id: img.id,
+          title: img.title,
+          description: img.description,
+          url: img.file_path,
+          thumbnail: img.thumbnail_path || img.file_path,
+          category: img.categories?.name || 'Uncategorized',
+          tags: img.image_tags?.map((tag: any) => tag.tag) || [],
+          uploadDate: new Date(img.created_at),
+          size: img.file_size,
+          dimensions: { width: img.width || 1920, height: img.height || 1080 },
+          userId: img.user_id,
+          isPublic: img.is_public,
+          likes: img.likes_count,
+          views: img.views_count
+        }));
+        setImages(formattedImages);
+      }
+
+      if (usersResponse.data) {
+        const formattedUsers = usersResponse.data.map((user: any) => ({
+          id: user.id,
+          name: user.name,
+          email: user.email || '',
+          role: user.role,
+          avatar: user.avatar,
+          joinDate: new Date(user.created_at),
+          lastActive: new Date(user.updated_at),
+          totalImages: user.total_images || 0,
+          totalViews: user.total_views || 0,
+          isActive: user.is_active
+        }));
+        setUsers(formattedUsers);
+      }
+    } catch (error) {
+      console.error('Failed to load dashboard data:', error);
+      toast.error('Failed to load dashboard data');
+    }
+  };
 
   const stats = [
     {

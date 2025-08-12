@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import toast from 'react-hot-toast';
 
 interface ApiResponse<T = any> {
   data?: T;
@@ -16,6 +17,7 @@ class ApiClient {
       });
 
       if (error) {
+        toast.error(error.message);
         return { error: error.message };
       }
 
@@ -27,6 +29,7 @@ class ApiClient {
           .eq('id', data.user.id)
           .single();
 
+        toast.success('Login successful!');
         return { 
           data: { 
             user: {
@@ -42,6 +45,7 @@ class ApiClient {
       return { error: 'Login failed' };
     } catch (error) {
       console.error('Login error:', error);
+      toast.error('Network error during login');
       return { error: 'Network error' };
     }
   }
@@ -60,12 +64,15 @@ class ApiClient {
       });
 
       if (error) {
+        toast.error(error.message);
         return { error: error.message };
       }
 
+      toast.success('Account created successfully!');
       return { data };
     } catch (error) {
       console.error('Registration error:', error);
+      toast.error('Network error during registration');
       return { error: 'Network error' };
     }
   }
@@ -74,6 +81,9 @@ class ApiClient {
     const { error } = await supabase.auth.signOut();
     if (error) {
       console.error('Logout error:', error);
+      toast.error('Logout failed');
+    } else {
+      toast.success('Logged out successfully');
     }
   }
 
@@ -118,12 +128,14 @@ class ApiClient {
       const { data, error } = await query.order('created_at', { ascending: false });
 
       if (error) {
+        toast.error('Failed to fetch images');
         return { error: error.message };
       }
 
       return { data };
     } catch (error) {
       console.error('Get images error:', error);
+      toast.error('Failed to fetch images');
       return { error: 'Failed to fetch images' };
     }
   }
@@ -138,6 +150,7 @@ class ApiClient {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
+        toast.error('Please login to upload images');
         return { error: 'User not authenticated' };
       }
 
@@ -147,14 +160,24 @@ class ApiClient {
       
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from('images')
-        .upload(fileName, file);
+        .upload(fileName, file, {
+          cacheControl: '3600',
+          upsert: false
+        });
 
       if (uploadError) {
+        toast.error('Failed to upload file');
         return { error: uploadError.message };
       }
 
       // Get public URL
       const { data: { publicUrl } } = supabase.storage
+        .from('images')
+        .getPublicUrl(fileName);
+
+      // Create thumbnail (for demo, using same image)
+      const thumbnailFileName = `${user.id}/thumb_${Date.now()}.${fileExt}`;
+      const { data: { publicUrl: thumbnailUrl } } = supabase.storage
         .from('images')
         .getPublicUrl(fileName);
 
@@ -165,7 +188,7 @@ class ApiClient {
           title: metadata.title,
           description: metadata.description || '',
           file_path: publicUrl,
-          thumbnail_path: publicUrl,
+          thumbnail_path: thumbnailUrl,
           file_size: file.size,
           mime_type: file.type,
           category_id: metadata.category_id,
@@ -176,6 +199,7 @@ class ApiClient {
         .single();
 
       if (insertError) {
+        toast.error('Failed to save image metadata');
         return { error: insertError.message };
       }
 
@@ -189,9 +213,14 @@ class ApiClient {
         await supabase.from('image_tags').insert(tagInserts);
       }
 
+      // Track upload event
+      await this.trackEvent('upload', { image_id: imageData.id });
+
+      toast.success('Image uploaded successfully!');
       return { data: imageData };
     } catch (error) {
       console.error('Upload error:', error);
+      toast.error('Upload failed');
       return { error: 'Upload failed' };
     }
   }
@@ -204,13 +233,39 @@ class ApiClient {
         .eq('id', id);
 
       if (error) {
+        toast.error('Failed to delete image');
         return { error: error.message };
       }
 
+      toast.success('Image deleted successfully');
       return { data: { message: 'Image deleted successfully' } };
     } catch (error) {
       console.error('Delete error:', error);
+      toast.error('Delete failed');
       return { error: 'Delete failed' };
+    }
+  }
+
+  async updateImage(id: string, updates: any) {
+    try {
+      const { data, error } = await supabase
+        .from('images')
+        .update(updates)
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (error) {
+        toast.error('Failed to update image');
+        return { error: error.message };
+      }
+
+      toast.success('Image updated successfully');
+      return { data };
+    } catch (error) {
+      console.error('Update error:', error);
+      toast.error('Update failed');
+      return { error: 'Update failed' };
     }
   }
 
@@ -223,12 +278,14 @@ class ApiClient {
         .order('created_at', { ascending: false });
 
       if (error) {
+        toast.error('Failed to fetch users');
         return { error: error.message };
       }
 
       return { data };
     } catch (error) {
       console.error('Get users error:', error);
+      toast.error('Failed to fetch users');
       return { error: 'Failed to fetch users' };
     }
   }
@@ -243,12 +300,15 @@ class ApiClient {
         .single();
 
       if (error) {
+        toast.error('Failed to update user');
         return { error: error.message };
       }
 
+      toast.success('User updated successfully');
       return { data };
     } catch (error) {
       console.error('Update user error:', error);
+      toast.error('Failed to update user');
       return { error: 'Failed to update user' };
     }
   }
@@ -284,13 +344,60 @@ class ApiClient {
         .single();
 
       if (error) {
+        toast.error('Failed to create category');
         return { error: error.message };
       }
 
+      toast.success('Category created successfully');
       return { data };
     } catch (error) {
       console.error('Create category error:', error);
+      toast.error('Failed to create category');
       return { error: 'Failed to create category' };
+    }
+  }
+
+  async updateCategory(id: string, updates: any) {
+    try {
+      const { data, error } = await supabase
+        .from('categories')
+        .update(updates)
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (error) {
+        toast.error('Failed to update category');
+        return { error: error.message };
+      }
+
+      toast.success('Category updated successfully');
+      return { data };
+    } catch (error) {
+      console.error('Update category error:', error);
+      toast.error('Failed to update category');
+      return { error: 'Failed to update category' };
+    }
+  }
+
+  async deleteCategory(id: string) {
+    try {
+      const { error } = await supabase
+        .from('categories')
+        .delete()
+        .eq('id', id);
+
+      if (error) {
+        toast.error('Failed to delete category');
+        return { error: error.message };
+      }
+
+      toast.success('Category deleted successfully');
+      return { data: { message: 'Category deleted successfully' } };
+    } catch (error) {
+      console.error('Delete category error:', error);
+      toast.error('Failed to delete category');
+      return { error: 'Failed to delete category' };
     }
   }
 
@@ -321,6 +428,7 @@ class ApiClient {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
+        toast.error('Please login to create collections');
         return { error: 'User not authenticated' };
       }
 
@@ -334,12 +442,15 @@ class ApiClient {
         .single();
 
       if (error) {
+        toast.error('Failed to create collection');
         return { error: error.message };
       }
 
+      toast.success('Collection created successfully');
       return { data };
     } catch (error) {
       console.error('Create collection error:', error);
+      toast.error('Failed to create collection');
       return { error: 'Failed to create collection' };
     }
   }
@@ -390,6 +501,75 @@ class ApiClient {
     } catch (error) {
       console.error('Track event error:', error);
     }
+  }
+
+  // Settings
+  async getSettings() {
+    try {
+      const { data, error } = await supabase
+        .from('settings')
+        .select('*');
+
+      if (error) {
+        return { error: error.message };
+      }
+
+      // Convert to key-value object
+      const settings: Record<string, any> = {};
+      data?.forEach(setting => {
+        settings[setting.setting_key] = setting.setting_value;
+      });
+
+      return { data: settings };
+    } catch (error) {
+      console.error('Get settings error:', error);
+      return { error: 'Failed to fetch settings' };
+    }
+  }
+
+  async updateSetting(key: string, value: any) {
+    try {
+      const { data, error } = await supabase
+        .from('settings')
+        .upsert({
+          setting_key: key,
+          setting_value: value
+        })
+        .select()
+        .single();
+
+      if (error) {
+        toast.error('Failed to update setting');
+        return { error: error.message };
+      }
+
+      return { data };
+    } catch (error) {
+      console.error('Update setting error:', error);
+      toast.error('Failed to update setting');
+      return { error: 'Failed to update setting' };
+    }
+  }
+
+  // Real-time subscriptions
+  subscribeToImages(callback: (payload: any) => void) {
+    return supabase
+      .channel('images')
+      .on('postgres_changes', 
+        { event: '*', schema: 'public', table: 'images' }, 
+        callback
+      )
+      .subscribe();
+  }
+
+  subscribeToUsers(callback: (payload: any) => void) {
+    return supabase
+      .channel('profiles')
+      .on('postgres_changes', 
+        { event: '*', schema: 'public', table: 'profiles' }, 
+        callback
+      )
+      .subscribe();
   }
 }
 
