@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
+import { Camera, Search, Filter, Grid, List } from 'lucide-react';
 import { Image as ImageType } from '../types';
 import { apiClient } from '../utils/api';
 import ImageCard from '../components/Gallery/ImageCard';
@@ -8,6 +9,7 @@ import FilterBar from '../components/Gallery/FilterBar';
 
 const Gallery: React.FC = () => {
   const [images, setImages] = useState<ImageType[]>([]);
+  const [loading, setLoading] = useState(true);
   const [filteredImages, setFilteredImages] = useState<ImageType[]>([]);
   const [selectedImage, setSelectedImage] = useState<ImageType | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -15,7 +17,7 @@ const Gallery: React.FC = () => {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
 
   useEffect(() => {
-    const loadImages = () => {
+    const loadImages = async () => {
       loadImagesFromSupabase();
     };
     loadImages();
@@ -23,6 +25,7 @@ const Gallery: React.FC = () => {
 
   const loadImagesFromSupabase = async () => {
     try {
+      setLoading(true);
       const response = await apiClient.getImages({ is_public: true });
       if (response.data) {
         const formattedImages = response.data.map((img: any) => ({
@@ -47,6 +50,8 @@ const Gallery: React.FC = () => {
     } catch (error) {
       console.error('Failed to load images:', error);
       toast.error('Failed to load images');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -96,6 +101,68 @@ const Gallery: React.FC = () => {
       {/* Hero Section */}
       <div className="bg-gradient-to-r from-blue-900 to-blue-700 text-white py-20 px-4">
         <div className="max-w-7xl mx-auto text-center">
+          <div className="flex items-center justify-center space-x-3 mb-6">
+            <Camera className="h-12 w-12 text-yellow-400" />
+            <div className="text-left">
+              <h1 className="text-4xl md:text-6xl font-bold">
+                Gallery Pro
+              </h1>
+              <p className="text-lg text-blue-200">Professional Image Management</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Gallery Content */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        {loading ? (
+          <div className="flex items-center justify-center py-12">
+            <div className="flex items-center space-x-2">
+              <div className="w-6 h-6 border-2 border-blue-900 border-t-transparent rounded-full animate-spin" />
+              <span className="text-gray-600">Loading images...</span>
+            </div>
+          </div>
+        ) : (
+          <>
+            <FilterBar
+              searchTerm={searchTerm}
+              onSearchChange={setSearchTerm}
+              selectedCategory={selectedCategory}
+              onCategoryChange={setSelectedCategory}
+              categories={categories}
+              viewMode={viewMode}
+              onViewModeChange={setViewMode}
+            />
+
+            {filteredImages.length === 0 ? (
+              <div className="text-center py-12">
+                <Camera className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">No images found</h3>
+                <p className="text-gray-500">
+                  {images.length === 0 
+                    ? 'No images have been uploaded yet.' 
+                    : 'Try adjusting your search or filter criteria.'
+                  }
+                </p>
+              </div>
+            ) : (
+              <div className={`grid gap-6 ${
+                viewMode === 'grid' 
+                  ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4' 
+                  : 'grid-cols-1'
+              }`}>
+                {filteredImages.map((image) => (
+                  <ImageCard
+                    key={image.id}
+                    image={image}
+                    onClick={() => handleImageClick(image)}
+                  />
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </div>
           <h1 className="text-4xl md:text-6xl font-bold mb-6">
             Discover Amazing Photography
           </h1>

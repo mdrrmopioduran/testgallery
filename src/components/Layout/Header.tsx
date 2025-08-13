@@ -1,12 +1,14 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Camera, User, LogOut, Settings } from 'lucide-react';
+import { Camera, User, LogOut, Settings, Menu, X } from 'lucide-react';
+import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useAuth } from '../../contexts/AuthContext';
 
 const Header: React.FC = () => {
   const location = useLocation();
   const { user, logout, isAuthenticated } = useAuth();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const isActive = (path: string) => location.pathname === path;
 
@@ -48,6 +50,17 @@ const Header: React.FC = () => {
             )}
           </nav>
 
+          {/* Mobile menu button */}
+          <div className="md:hidden">
+            <button
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              className="p-2 rounded-md text-gray-700 hover:text-blue-900 hover:bg-gray-50"
+            >
+              {mobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+            </button>
+          </div>
+
+          {/* Desktop user menu */}
           <div className="flex items-center space-x-4">
             {isAuthenticated ? (
               <div className="flex items-center space-x-3">
@@ -80,6 +93,43 @@ const Header: React.FC = () => {
             )}
           </div>
         </div>
+
+        {/* Mobile menu */}
+        {mobileMenuOpen && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="md:hidden border-t border-gray-200 bg-white"
+          >
+            <div className="px-4 py-4 space-y-2">
+              <Link
+                to="/"
+                className={`block px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                  isActive('/') 
+                    ? 'text-blue-900 bg-yellow-50' 
+                    : 'text-gray-700 hover:text-blue-900 hover:bg-gray-50'
+                }`}
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                Gallery
+              </Link>
+              {isAuthenticated && (
+                <Link
+                  to="/admin"
+                  className={`block px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                    isActive('/admin') 
+                      ? 'text-blue-900 bg-yellow-50' 
+                      : 'text-gray-700 hover:text-blue-900 hover:bg-gray-50'
+                  }`}
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  Dashboard
+                </Link>
+              )}
+            </div>
+          </motion.div>
+        )}
       </div>
     </motion.header>
   );

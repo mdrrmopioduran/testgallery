@@ -1,6 +1,6 @@
 import React, { useCallback, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { Upload, X, Image as ImageIcon, AlertCircle, CheckCircle } from 'lucide-react';
+import { Upload, X, Image as ImageIcon, AlertCircle, CheckCircle, FileImage } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 interface UploadZoneProps {
@@ -26,34 +26,68 @@ const UploadZone: React.FC<UploadZoneProps> = ({
           toast.error(`${file.name} is too large. Max size is ${maxSize}MB`);
         } else if (error.code === 'file-invalid-type') {
           toast.error(`${file.name} is not a supported image format`);
+        } else {
+          toast.error(`${file.name}: ${error.message}`);
         }
       });
     });
 
     // Handle accepted files
     if (acceptedFiles.length > 0) {
-      const newPreviews = acceptedFiles.map(file => ({
-        file,
-        preview: URL.createObjectURL(file)
-      }));
+      const newPreviews = acceptedFiles.map(file => {
+        // Validate file size manually as well
+        if (file.size > maxSize * 1024 * 1024) {
+          return {
+            file,
+            preview: '',
+            error: `File too large (${(file.size / 1024 / 1024).toFixed(1)}MB > ${maxSize}MB)`
+          };
+        }
+
+        // Validate file type
+        if (!acceptedTypes.includes(file.type)) {
+          return {
+            file,
+            preview: '',
+            error: 'Unsupported file format'
+          };
+        }
+
+        return {
+          file,
+          preview: URL.createObjectURL(file)
+        };
+      });
 
       setPreviews(prev => [...prev, ...newPreviews]);
 
-      // Convert to FileList for compatibility
-      const dataTransfer = new DataTransfer();
-      [...previews.map(p => p.file), ...acceptedFiles].forEach(file => {
-        dataTransfer.items.add(file);
-      });
-      
-      onFilesSelected(dataTransfer.files);
-      toast.success(`${acceptedFiles.length} file(s) added for upload`);
+      // Only pass valid files
+      const validFiles = newPreviews.filter(p => !p.error).map(p => p.file);
+      if (validFiles.length > 0) {
+        const dataTransfer = new DataTransfer();
+        [...previews.map(p => p.file), ...validFiles].forEach(file => {
+          dataTransfer.items.add(file);
+        });
+        
+        onFilesSelected(dataTransfer.files);
+        toast.success(`${validFiles.length} file(s) ready for upload`);
+      }
+
+      // Show errors for invalid files
+      const invalidFiles = newPreviews.filter(p => p.error);
+      if (invalidFiles.length > 0) {
+        toast.error(`${invalidFiles.length} file(s) rejected due to errors`);
+      }
     }
-  }, [onFilesSelected, maxSize, previews]);
+  }, [onFilesSelected, maxSize, previews, acceptedTypes]);
 
   const { getRootProps, getInputProps, isDragActive, isDragReject } = useDropzone({
     onDrop,
     accept: {
-      'image/*': acceptedTypes.map(type => `.${type.split('/')[1]}`)
+      'image/jpeg': ['.jpg', '.jpeg'],
+      'image/png': ['.png'],
+      'image/webp': ['.webp'],
+      'image/gif': ['.gif']
     },
     multiple,
     maxSize: maxSize * 1024 * 1024,
@@ -61,22 +95,47 @@ const UploadZone: React.FC<UploadZoneProps> = ({
   });
 
   const removePreview = (index: number) => {
+    const removedPreview = previews[index];
     const newPreviews = previews.filter((_, i) => i !== index);
     setPreviews(newPreviews);
     
+    // Revoke object URL to prevent memory leaks
+    if (removedPreview.preview) {
+      URL.revokeObjectURL(removedPreview.preview);
+    }
+    
     // Update file list
     const dataTransfer = new DataTransfer();
-    newPreviews.forEach(({ file }) => {
+    newPreviews.filter(p => !p.error).forEach(({ file }) => {
       dataTransfer.items.add(file);
     });
     onFilesSelected(dataTransfer.files);
   };
 
   const clearAll = () => {
+    // Revoke all object URLs
+    previews.forEach(preview => {
+      if (preview.preview) {
+        URL.revokeObjectURL(preview.preview);
+      }
+    });
+    
     setPreviews([]);
     const dataTransfer = new DataTransfer();
     onFilesSelected(dataTransfer.files);
+    toast.success('All files cleared');
   };
+
+  // Clean up object URLs on unmount
+  React.useEffect(() => {
+    return () => {
+      previews.forEach(preview => {
+        if (preview.preview) {
+          URL.revokeObjectURL(preview.preview);
+        }
+      });
+    };
+  }, []);
 
   return (
     <div className="w-full space-y-4">
@@ -128,7 +187,7 @@ const UploadZone: React.FC<UploadZoneProps> = ({
           <div className="flex items-center justify-between mb-4">
             <h4 className="text-lg font-medium text-gray-900 flex items-center">
               <ImageIcon className="h-5 w-5 mr-2" />
-              Selected Files ({previews.length})
+              Selected Files ({previews.filter(p => !p.error).length} valid, {previews.filter(p => p.error).length} errors)
             </h4>
             <button
               onClick={clearAll}
@@ -141,12 +200,24 @@ const UploadZone: React.FC<UploadZoneProps> = ({
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
             {previews.map((item, index) => (
               <div key={index} className="relative group">
-                <div className="aspect-square rounded-lg overflow-hidden bg-white border border-gray-200">
-                  <img
-                    src={item.preview}
-                    alt={`Preview ${index + 1}`}
-                    className="w-full h-full object-cover"
-                  />
+                <div className={`aspect-square rounded-lg overflow-hidden border-2 ${
+                  item.error ? 'border-red-300 bg-red-50' : 'border-gray-200 bg-white'
+                }`}>
+                  {item.error ? (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <AlertCircle className="h-8 w-8 text-red-400" />
+                    </div>
+                  ) : item.preview ? (
+                    <img
+                      src={item.preview}
+                      alt={`Preview ${index + 1}`}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <FileImage className="h-8 w-8 text-gray-400" />
+                    </div>
+                  )}
                 </div>
                 
                 <button
@@ -163,14 +234,13 @@ const UploadZone: React.FC<UploadZoneProps> = ({
                   <p className="text-xs text-gray-500">
                     {(item.file.size / 1024 / 1024).toFixed(1)} MB
                   </p>
+                  {item.error && (
+                    <div className="mt-1 flex items-center text-red-500">
+                      <AlertCircle className="h-3 w-3 mr-1" />
+                      <span className="text-xs">{item.error}</span>
+                    </div>
+                  )}
                 </div>
-                
-                {item.error && (
-                  <div className="mt-1 flex items-center text-red-500">
-                    <AlertCircle className="h-3 w-3 mr-1" />
-                    <span className="text-xs">{item.error}</span>
-                  </div>
-                )}
               </div>
             ))}
           </div>

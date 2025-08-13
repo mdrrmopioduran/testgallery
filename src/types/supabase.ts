@@ -1,31 +1,11 @@
 export interface Database {
   public: {
     Tables: {
-      users: {
-        Row: {
-          id: string;
-          email: string;
-          created_at: string;
-          updated_at: string;
-        };
-        Insert: {
-          id?: string;
-          email: string;
-          created_at?: string;
-          updated_at?: string;
-        };
-        Update: {
-          id?: string;
-          email?: string;
-          created_at?: string;
-          updated_at?: string;
-        };
-      };
       profiles: {
         Row: {
           id: string;
           name: string;
-          avatar: string;
+          avatar: string | null;
           role: 'admin' | 'photographer' | 'user';
           total_images: number;
           total_views: number;
@@ -36,7 +16,7 @@ export interface Database {
         Insert: {
           id: string;
           name: string;
-          avatar?: string;
+          avatar?: string | null;
           role?: 'admin' | 'photographer' | 'user';
           total_images?: number;
           total_views?: number;
@@ -47,7 +27,7 @@ export interface Database {
         Update: {
           id?: string;
           name?: string;
-          avatar?: string;
+          avatar?: string | null;
           role?: 'admin' | 'photographer' | 'user';
           total_images?: number;
           total_views?: number;
@@ -88,12 +68,12 @@ export interface Database {
           title: string;
           description: string;
           file_path: string;
-          thumbnail_path: string;
+          thumbnail_path: string | null;
           file_size: number;
           width: number;
           height: number;
           mime_type: string;
-          category_id: string;
+          category_id: string | null;
           user_id: string;
           is_public: boolean;
           likes_count: number;
@@ -106,12 +86,12 @@ export interface Database {
           title: string;
           description?: string;
           file_path: string;
-          thumbnail_path?: string;
+          thumbnail_path?: string | null;
           file_size: number;
           width?: number;
           height?: number;
           mime_type?: string;
-          category_id?: string;
+          category_id?: string | null;
           user_id: string;
           is_public?: boolean;
           likes_count?: number;
@@ -124,12 +104,12 @@ export interface Database {
           title?: string;
           description?: string;
           file_path?: string;
-          thumbnail_path?: string;
+          thumbnail_path?: string | null;
           file_size?: number;
           width?: number;
           height?: number;
           mime_type?: string;
-          category_id?: string;
+          category_id?: string | null;
           user_id?: string;
           is_public?: boolean;
           likes_count?: number;
@@ -163,7 +143,7 @@ export interface Database {
           id: string;
           name: string;
           description: string;
-          cover_image_id: string;
+          cover_image_id: string | null;
           user_id: string;
           is_public: boolean;
           created_at: string;
@@ -173,7 +153,7 @@ export interface Database {
           id?: string;
           name: string;
           description?: string;
-          cover_image_id?: string;
+          cover_image_id?: string | null;
           user_id: string;
           is_public?: boolean;
           created_at?: string;
@@ -183,7 +163,7 @@ export interface Database {
           id?: string;
           name?: string;
           description?: string;
-          cover_image_id?: string;
+          cover_image_id?: string | null;
           user_id?: string;
           is_public?: boolean;
           created_at?: string;
@@ -217,24 +197,24 @@ export interface Database {
         Row: {
           id: string;
           event_type: 'view' | 'like' | 'download' | 'upload' | 'login';
-          user_id: string;
-          image_id: string;
+          user_id: string | null;
+          image_id: string | null;
           metadata: any;
           created_at: string;
         };
         Insert: {
           id?: string;
           event_type: 'view' | 'like' | 'download' | 'upload' | 'login';
-          user_id?: string;
-          image_id?: string;
+          user_id?: string | null;
+          image_id?: string | null;
           metadata?: any;
           created_at?: string;
         };
         Update: {
           id?: string;
           event_type?: 'view' | 'like' | 'download' | 'upload' | 'login';
-          user_id?: string;
-          image_id?: string;
+          user_id?: string | null;
+          image_id?: string | null;
           metadata?: any;
           created_at?: string;
         };
@@ -250,7 +230,7 @@ export interface Database {
         Insert: {
           id?: string;
           setting_key: string;
-          setting_value?: any;
+          setting_value: any;
           created_at?: string;
           updated_at?: string;
         };

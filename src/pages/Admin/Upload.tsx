@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Upload as UploadIcon, Image as ImageIcon, Tag, FolderOpen, Droplets, CheckCircle, AlertCircle } from 'lucide-react';
+import { Upload as UploadIcon, Image as ImageIcon, Tag, FolderOpen, CheckCircle, AlertCircle, RefreshCw } from 'lucide-react';
+import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 import UploadZone from '../../components/Admin/UploadZone';
 import apiClient from '../../utils/api';
@@ -7,6 +8,8 @@ import apiClient from '../../utils/api';
 const Upload: React.FC = () => {
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [categories, setCategories] = useState<any[]>([]);
+  const [loadingCategories, setLoadingCategories] = useState(true);
   const [uploadResults, setUploadResults] = useState<{ success: boolean; message: string }[]>([]);
   const [formData, setFormData] = useState({
     title: '',
@@ -15,6 +18,23 @@ const Upload: React.FC = () => {
     tags: '',
     isPublic: true
   });
+
+  useEffect(() => {
+    loadCategories();
+  }, []);
+
+  const loadCategories = async () => {
+    try {
+      const response = await apiClient.getCategories();
+      if (response.data) {
+        setCategories(response.data);
+      }
+    } catch (error) {
+      console.error('Failed to load categories:', error);
+    } finally {
+      setLoadingCategories(false);
+    }
+  };
 
   const handleFilesSelected = (files: FileList) => {
     const newFiles = Array.from(files);
@@ -40,7 +60,7 @@ const Upload: React.FC = () => {
       try {
         const response = await apiClient.uploadImage(file, {
           title: formData.title || file.name.split('.')[0],
-          description: formData.description || 'Uploaded image',
+          description: formData.description || `Uploaded image: ${file.name}`,
           category_id: formData.category === 'Nature' ? await getCategoryId('Nature') : undefined,
           tags: formData.tags ? formData.tags.split(',').map(tag => tag.trim()) : [],
           is_public: formData.isPublic
@@ -85,12 +105,17 @@ const Upload: React.FC = () => {
     return undefined;
   };
 
-  const categories = ['Nature', 'Urban', 'Art', 'Objects', 'People', 'Architecture', 'Travel'];
-
   return (
-    <div className="space-y-6">
+    <motion.div 
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="space-y-6"
+    >
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-blue-900">Upload Images</h1>
+        <div>
+          <h1 className="text-2xl font-bold text-blue-900">Upload Images</h1>
+          <p className="text-gray-600 mt-1">Upload and manage your image collection</p>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -182,9 +207,14 @@ const Upload: React.FC = () => {
                 value={formData.category}
                 onChange={(e) => setFormData(prev => ({ ...prev, category: e.target.value }))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-900 focus:border-transparent"
+                disabled={loadingCategories}
               >
-                {categories.map(category => (
-                  <option key={category} value={category}>{category}</option>
+                {loadingCategories ? (
+                  <option>Loading categories...</option>
+                ) : (
+                  categories.map(category => (
+                    <option key={category.id} value={category.id}>{category.name}</option>
+                  ))
                 ))}
               </select>
             </div>
@@ -227,7 +257,7 @@ const Upload: React.FC = () => {
           </form>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 };
 

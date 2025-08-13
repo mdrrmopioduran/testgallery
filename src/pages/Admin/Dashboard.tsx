@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Image, Users, Eye, Heart, TrendingUp, Upload, Activity } from 'lucide-react';
+import { Image, Users, Eye, Heart, TrendingUp, Upload, Activity, RefreshCw } from 'lucide-react';
+import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 import StatsCard from '../../components/Admin/StatsCard';
 import { apiClient } from '../../utils/api';
@@ -8,6 +9,7 @@ import { Image as ImageType, User, Analytics } from '../../types';
 const Dashboard: React.FC = () => {
   const [images, setImages] = useState<ImageType[]>([]);
   const [users, setUsers] = useState<User[]>([]);
+  const [loading, setLoading] = useState(true);
   const [analytics, setAnalytics] = useState<Analytics>(mockAnalytics);
 
   useEffect(() => {
@@ -19,6 +21,7 @@ const Dashboard: React.FC = () => {
 
   const loadDashboardData = async () => {
     try {
+      setLoading(true);
       const [imagesResponse, usersResponse] = await Promise.all([
         apiClient.getImages(),
         apiClient.getUsers()
@@ -62,6 +65,8 @@ const Dashboard: React.FC = () => {
     } catch (error) {
       console.error('Failed to load dashboard data:', error);
       toast.error('Failed to load dashboard data');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -103,10 +108,29 @@ const Dashboard: React.FC = () => {
   const recentImages = images.slice(0, 5);
   const topImages = images.sort((a, b) => b.views - a.views).slice(0, 5);
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="flex items-center space-x-2">
+          <RefreshCw className="h-6 w-6 animate-spin text-blue-900" />
+          <span className="text-gray-600">Loading dashboard...</span>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-6">
+    <motion.div 
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5 }}
+      className="space-y-6"
+    >
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-blue-900">Dashboard</h1>
+        <div>
+          <h1 className="text-2xl font-bold text-blue-900">Dashboard</h1>
+          <p className="text-gray-600 mt-1">Welcome to your gallery management system</p>
+        </div>
         <div className="flex items-center space-x-2 text-sm text-gray-500">
           <Activity className="h-4 w-4" />
           <span>Last updated: {new Date().toLocaleTimeString()}</span>
@@ -115,8 +139,15 @@ const Dashboard: React.FC = () => {
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {stats.map((stat) => (
+        {stats.map((stat, index) => (
+          <motion.div
+            key={stat.title}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: index * 0.1 }}
+          >
           <StatsCard key={stat.title} {...stat} />
+          </motion.div>
         ))}
       </div>
 
@@ -208,7 +239,7 @@ const Dashboard: React.FC = () => {
           ))}
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 };
 

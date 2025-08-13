@@ -7,7 +7,7 @@ import toast from 'react-hot-toast';
 interface AuthContextType {
   user: User | null;
   login: (email: string, password: string) => Promise<boolean>;
-  logout: () => void;
+  logout: () => Promise<void>;
   isAuthenticated: boolean;
   isAdmin: boolean;
   loading: boolean;
@@ -36,6 +36,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   useEffect(() => {
     // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
+      console.log('Initial session:', session?.user?.email);
       setSession(session);
       if (session?.user) {
         loadUserProfile(session.user.id);
@@ -64,6 +65,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const loadUserProfile = async (userId: string) => {
     try {
+      setLoading(true);
       const { data: profile, error } = await supabase
         .from('profiles')
         .select('*')
@@ -72,16 +74,24 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       if (error) {
         console.error('Error loading profile:', error);
+        
         // If profile doesn't exist, create one
         if (error.code === 'PGRST116') {
           const { data: { user: authUser } } = await supabase.auth.getUser();
           if (authUser) {
+            console.log('Creating new profile for user:', authUser.email);
+            
+            // Check if this is the first user (should be admin)
+            const { count } = await supabase
+              .from('profiles')
+              .select('*', { count: 'exact', head: true });
+
             const { data: newProfile, error: createError } = await supabase
               .from('profiles')
               .insert({
                 id: authUser.id,
                 name: authUser.user_metadata?.name || authUser.email?.split('@')[0] || 'User',
-                role: 'admin' // First user becomes admin
+                role: count === 0 ? 'admin' : 'user' // First user becomes admin
               })
               .select()
               .single();
@@ -89,13 +99,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             if (createError) {
               console.error('Error creating profile:', createError);
               setUser(null);
+              toast.error('Failed to create user profile');
             } else {
               const userData: User = {
                 id: newProfile.id,
                 name: newProfile.name,
                 email: authUser.email || '',
                 role: newProfile.role as 'admin' | 'photographer' | 'user',
-                avatar: newProfile.avatar,
+                avatar: newProfile.avatar || 'https://images.pexels.com/photos/1222271/pexels-photo-1222271.jpeg?auto=compress&cs=tinysrgb&w=200',
                 joinDate: new Date(newProfile.created_at),
                 lastActive: new Date(newProfile.updated_at),
                 totalImages: newProfile.total_images || 0,
@@ -103,10 +114,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                 isActive: newProfile.is_active
               };
               setUser(userData);
+              toast.success('Profile created successfully!');
             }
           }
         } else {
           setUser(null);
+          toast.error('Failed to load user profile');
         }
       } else {
         const userData: User = {
@@ -114,7 +127,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           name: profile.name,
           email: session?.user?.email || '',
           role: profile.role as 'admin' | 'photographer' | 'user',
-          avatar: profile.avatar,
+          avatar: profile.avatar || 'https://images.pexels.com/photos/1222271/pexels-photo-1222271.jpeg?auto=compress&cs=tinysrgb&w=200',
           joinDate: new Date(profile.created_at),
           lastActive: new Date(profile.updated_at),
           totalImages: profile.total_images || 0,
@@ -126,6 +139,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     } catch (error) {
       console.error('Failed to load user profile:', error);
       setUser(null);
+      toast.error('Failed to load user profile');
     } finally {
       setLoading(false);
     }
@@ -153,9 +167,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             event_type: 'login',
             user_id: data.user.id
           });
+
+        return true;
       }
 
-      return !!data.user;
+      return false;
     } catch (error) {
       console.error('Login error:', error);
       toast.error('Login failed');
@@ -166,10 +182,20 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   const logout = async () => {
-    await supabase.auth.signOut();
-    setUser(null);
-    setSession(null);
-    toast.success('Logged out successfully');
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        console.error('Logout error:', error);
+        toast.error('Logout failed');
+      } else {
+        setUser(null);
+        setSession(null);
+        toast.success('Logged out successfully');
+      }
+    } catch (error) {
+      console.error('Logout error:', error);
+      toast.error('Logout failed');
+    }
   };
 
   const value = {

@@ -1,4 +1,4 @@
-import { supabase } from '../lib/supabase';
+import { supabase, uploadImageToStorage, deleteImageFromStorage } from '../lib/supabase';
 import toast from 'react-hot-toast';
 
 interface ApiResponse<T = any> {
@@ -17,17 +17,52 @@ class ApiClient {
       });
 
       if (error) {
+        console.error('Login error:', error);
         toast.error(error.message);
         return { error: error.message };
       }
 
-      if (data.user) {
+      if (data.user && data.session) {
         // Get user profile
-        const { data: profile } = await supabase
+        const { data: profile, error: profileError } = await supabase
           .from('profiles')
           .select('*')
           .eq('id', data.user.id)
           .single();
+
+        if (profileError) {
+          console.error('Profile fetch error:', profileError);
+          // Profile might not exist, create it
+          const { data: newProfile, error: createError } = await supabase
+            .from('profiles')
+            .insert({
+              id: data.user.id,
+              name: data.user.user_metadata?.name || data.user.email?.split('@')[0] || 'User',
+              role: 'admin' // First user becomes admin
+            })
+            .select()
+            .single();
+
+          if (createError) {
+            console.error('Profile creation error:', createError);
+            return { error: 'Failed to create user profile' };
+          }
+
+          toast.success('Login successful! Profile created.');
+          return { 
+            data: { 
+              user: {
+                id: data.user.id,
+                email: data.user.email,
+                ...newProfile
+              }, 
+              session: data.session 
+            } 
+          };
+        }
+
+        // Track login event
+        await this.trackEvent('login', { user_id: data.user.id });
 
         toast.success('Login successful!');
         return { 
@@ -64,12 +99,17 @@ class ApiClient {
       });
 
       if (error) {
+        console.error('Registration error:', error);
         toast.error(error.message);
         return { error: error.message };
       }
 
-      toast.success('Account created successfully!');
-      return { data };
+      if (data.user) {
+        toast.success('Account created successfully!');
+        return { data };
+      }
+
+      return { error: 'Registration failed' };
     } catch (error) {
       console.error('Registration error:', error);
       toast.error('Network error during registration');
@@ -78,12 +118,20 @@ class ApiClient {
   }
 
   async logout() {
-    const { error } = await supabase.auth.signOut();
-    if (error) {
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        console.error('Logout error:', error);
+        toast.error('Logout failed');
+        return { error: error.message };
+      } else {
+        toast.success('Logged out successfully');
+        return { data: { message: 'Logged out successfully' } };
+      }
+    } catch (error) {
       console.error('Logout error:', error);
       toast.error('Logout failed');
-    } else {
-      toast.success('Logged out successfully');
+      return { error: 'Logout failed' };
     }
   }
 
@@ -94,14 +142,14 @@ class ApiClient {
     is_public?: boolean;
     limit?: number;
     offset?: number;
-  }) {
+  }): Promise<ApiResponse> {
     try {
       let query = supabase
         .from('images')
         .select(`
           *,
-          categories(name),
-          profiles(name),
+          categories(id, name),
+          profiles(id, name),
           image_tags(tag)
         `);
 
@@ -128,6 +176,7 @@ class ApiClient {
       const { data, error } = await query.order('created_at', { ascending: false });
 
       if (error) {
+        console.error('Get images error:', error);
         toast.error('Failed to fetch images');
         return { error: error.message };
       }
@@ -146,7 +195,7 @@ class ApiClient {
     category_id?: string;
     tags?: string[];
     is_public?: boolean;
-  }) {
+  }): Promise<ApiResponse> {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
@@ -155,31 +204,7 @@ class ApiClient {
       }
 
       // Upload file to storage
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${user.id}/${Date.now()}.${fileExt}`;
-      
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('images')
-        .upload(fileName, file, {
-          cacheControl: '3600',
-          upsert: false
-        });
-
-      if (uploadError) {
-        toast.error('Failed to upload file');
-        return { error: uploadError.message };
-      }
-
-      // Get public URL
-      const { data: { publicUrl } } = supabase.storage
-        .from('images')
-        .getPublicUrl(fileName);
-
-      // Create thumbnail (for demo, using same image)
-      const thumbnailFileName = `${user.id}/thumb_${Date.now()}.${fileExt}`;
-      const { data: { publicUrl: thumbnailUrl } } = supabase.storage
-        .from('images')
-        .getPublicUrl(fileName);
+      const { fileName, publicUrl } = await uploadImageToStorage(file, user.id);
 
       // Insert image record
       const { data: imageData, error: insertError } = await supabase
@@ -188,7 +213,7 @@ class ApiClient {
           title: metadata.title,
           description: metadata.description || '',
           file_path: publicUrl,
-          thumbnail_path: thumbnailUrl,
+          thumbnail_path: publicUrl, // For now, using same image as thumbnail
           file_size: file.size,
           mime_type: file.type,
           category_id: metadata.category_id,
@@ -199,6 +224,7 @@ class ApiClient {
         .single();
 
       if (insertError) {
+        console.error('Insert image error:', insertError);
         toast.error('Failed to save image metadata');
         return { error: insertError.message };
       }
@@ -210,7 +236,13 @@ class ApiClient {
           tag: tag.trim()
         }));
 
-        await supabase.from('image_tags').insert(tagInserts);
+        const { error: tagError } = await supabase
+          .from('image_tags')
+          .insert(tagInserts);
+
+        if (tagError) {
+          console.error('Tag insert error:', tagError);
+        }
       }
 
       // Track upload event
@@ -225,17 +257,45 @@ class ApiClient {
     }
   }
 
-  async deleteImage(id: string) {
+  async deleteImage(id: string): Promise<ApiResponse> {
     try {
-      const { error } = await supabase
+      // Get image details first
+      const { data: image, error: fetchError } = await supabase
+        .from('images')
+        .select('file_path, user_id')
+        .eq('id', id)
+        .single();
+
+      if (fetchError) {
+        console.error('Fetch image error:', fetchError);
+        toast.error('Failed to find image');
+        return { error: fetchError.message };
+      }
+
+      // Check permissions
+      const { data: { user } } = await supabase.auth.getUser();
+      const isOwner = user?.id === image.user_id;
+      const isAdminUser = await this.isCurrentUserAdmin();
+
+      if (!isOwner && !isAdminUser) {
+        toast.error('You do not have permission to delete this image');
+        return { error: 'Permission denied' };
+      }
+
+      // Delete from database (this will cascade to related tables)
+      const { error: deleteError } = await supabase
         .from('images')
         .delete()
         .eq('id', id);
 
-      if (error) {
+      if (deleteError) {
+        console.error('Delete image error:', deleteError);
         toast.error('Failed to delete image');
-        return { error: error.message };
+        return { error: deleteError.message };
       }
+
+      // Delete from storage
+      await deleteImageFromStorage(image.file_path);
 
       toast.success('Image deleted successfully');
       return { data: { message: 'Image deleted successfully' } };
@@ -246,7 +306,7 @@ class ApiClient {
     }
   }
 
-  async updateImage(id: string, updates: any) {
+  async updateImage(id: string, updates: any): Promise<ApiResponse> {
     try {
       const { data, error } = await supabase
         .from('images')
@@ -256,6 +316,7 @@ class ApiClient {
         .single();
 
       if (error) {
+        console.error('Update image error:', error);
         toast.error('Failed to update image');
         return { error: error.message };
       }
@@ -270,7 +331,7 @@ class ApiClient {
   }
 
   // Users
-  async getUsers() {
+  async getUsers(): Promise<ApiResponse> {
     try {
       const { data, error } = await supabase
         .from('profiles')
@@ -278,6 +339,7 @@ class ApiClient {
         .order('created_at', { ascending: false });
 
       if (error) {
+        console.error('Get users error:', error);
         toast.error('Failed to fetch users');
         return { error: error.message };
       }
@@ -290,7 +352,7 @@ class ApiClient {
     }
   }
 
-  async updateUser(id: string, userData: any) {
+  async updateUser(id: string, userData: any): Promise<ApiResponse> {
     try {
       const { data, error } = await supabase
         .from('profiles')
@@ -300,6 +362,7 @@ class ApiClient {
         .single();
 
       if (error) {
+        console.error('Update user error:', error);
         toast.error('Failed to update user');
         return { error: error.message };
       }
@@ -313,8 +376,37 @@ class ApiClient {
     }
   }
 
+  async deleteUser(id: string): Promise<ApiResponse> {
+    try {
+      // Check if current user is admin
+      const isAdminUser = await this.isCurrentUserAdmin();
+      if (!isAdminUser) {
+        toast.error('Only admins can delete users');
+        return { error: 'Permission denied' };
+      }
+
+      const { error } = await supabase
+        .from('profiles')
+        .delete()
+        .eq('id', id);
+
+      if (error) {
+        console.error('Delete user error:', error);
+        toast.error('Failed to delete user');
+        return { error: error.message };
+      }
+
+      toast.success('User deleted successfully');
+      return { data: { message: 'User deleted successfully' } };
+    } catch (error) {
+      console.error('Delete user error:', error);
+      toast.error('Failed to delete user');
+      return { error: 'Failed to delete user' };
+    }
+  }
+
   // Categories
-  async getCategories() {
+  async getCategories(): Promise<ApiResponse> {
     try {
       const { data, error } = await supabase
         .from('categories')
@@ -325,6 +417,7 @@ class ApiClient {
         .order('name');
 
       if (error) {
+        console.error('Get categories error:', error);
         return { error: error.message };
       }
 
@@ -335,7 +428,7 @@ class ApiClient {
     }
   }
 
-  async createCategory(categoryData: { name: string; description: string }) {
+  async createCategory(categoryData: { name: string; description: string }): Promise<ApiResponse> {
     try {
       const { data, error } = await supabase
         .from('categories')
@@ -344,6 +437,7 @@ class ApiClient {
         .single();
 
       if (error) {
+        console.error('Create category error:', error);
         toast.error('Failed to create category');
         return { error: error.message };
       }
@@ -357,7 +451,7 @@ class ApiClient {
     }
   }
 
-  async updateCategory(id: string, updates: any) {
+  async updateCategory(id: string, updates: any): Promise<ApiResponse> {
     try {
       const { data, error } = await supabase
         .from('categories')
@@ -367,6 +461,7 @@ class ApiClient {
         .single();
 
       if (error) {
+        console.error('Update category error:', error);
         toast.error('Failed to update category');
         return { error: error.message };
       }
@@ -380,7 +475,7 @@ class ApiClient {
     }
   }
 
-  async deleteCategory(id: string) {
+  async deleteCategory(id: string): Promise<ApiResponse> {
     try {
       const { error } = await supabase
         .from('categories')
@@ -388,6 +483,7 @@ class ApiClient {
         .eq('id', id);
 
       if (error) {
+        console.error('Delete category error:', error);
         toast.error('Failed to delete category');
         return { error: error.message };
       }
@@ -402,7 +498,7 @@ class ApiClient {
   }
 
   // Collections
-  async getCollections() {
+  async getCollections(): Promise<ApiResponse> {
     try {
       const { data, error } = await supabase
         .from('collections')
@@ -414,6 +510,7 @@ class ApiClient {
         .order('created_at', { ascending: false });
 
       if (error) {
+        console.error('Get collections error:', error);
         return { error: error.message };
       }
 
@@ -424,7 +521,7 @@ class ApiClient {
     }
   }
 
-  async createCollection(collectionData: any) {
+  async createCollection(collectionData: any): Promise<ApiResponse> {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
@@ -442,6 +539,7 @@ class ApiClient {
         .single();
 
       if (error) {
+        console.error('Create collection error:', error);
         toast.error('Failed to create collection');
         return { error: error.message };
       }
@@ -456,7 +554,7 @@ class ApiClient {
   }
 
   // Analytics
-  async getAnalytics(params?: { startDate?: string; endDate?: string }) {
+  async getAnalytics(params?: { startDate?: string; endDate?: string }): Promise<ApiResponse> {
     try {
       let query = supabase
         .from('analytics_events')
@@ -473,6 +571,7 @@ class ApiClient {
       const { data, error } = await query.order('created_at', { ascending: false });
 
       if (error) {
+        console.error('Get analytics error:', error);
         return { error: error.message };
       }
 
@@ -483,7 +582,7 @@ class ApiClient {
     }
   }
 
-  async trackEvent(eventType: string, metadata?: any) {
+  async trackEvent(eventType: string, metadata?: any): Promise<void> {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       
@@ -504,20 +603,25 @@ class ApiClient {
   }
 
   // Settings
-  async getSettings() {
+  async getSettings(): Promise<ApiResponse> {
     try {
       const { data, error } = await supabase
         .from('settings')
         .select('*');
 
       if (error) {
+        console.error('Get settings error:', error);
         return { error: error.message };
       }
 
       // Convert to key-value object
       const settings: Record<string, any> = {};
       data?.forEach(setting => {
-        settings[setting.setting_key] = setting.setting_value;
+        try {
+          settings[setting.setting_key] = JSON.parse(setting.setting_value);
+        } catch {
+          settings[setting.setting_key] = setting.setting_value;
+        }
       });
 
       return { data: settings };
@@ -527,18 +631,19 @@ class ApiClient {
     }
   }
 
-  async updateSetting(key: string, value: any) {
+  async updateSetting(key: string, value: any): Promise<ApiResponse> {
     try {
       const { data, error } = await supabase
         .from('settings')
         .upsert({
           setting_key: key,
-          setting_value: value
+          setting_value: JSON.stringify(value)
         })
         .select()
         .single();
 
       if (error) {
+        console.error('Update setting error:', error);
         toast.error('Failed to update setting');
         return { error: error.message };
       }
@@ -548,6 +653,25 @@ class ApiClient {
       console.error('Update setting error:', error);
       toast.error('Failed to update setting');
       return { error: 'Failed to update setting' };
+    }
+  }
+
+  // Helper methods
+  async isCurrentUserAdmin(): Promise<boolean> {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return false;
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single();
+
+      return profile?.role === 'admin';
+    } catch (error) {
+      console.error('Error checking admin status:', error);
+      return false;
     }
   }
 
